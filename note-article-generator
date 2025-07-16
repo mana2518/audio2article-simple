@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# note記事生成専用ツール - シェルスクリプト
+# 指定されたプロンプトと文体で毎回確実に記事生成
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/note-style-generate.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install openai-whisper pyperclip"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+echo "📝 note記事生成ツール (指定プロンプト・文体対応)"
+echo "======================================================"
+echo "✨ 完全対応:"
+echo "  ・ 2500文字構成 (導入200字 + 本文2000字 + 結論300字)"
+echo "  ・ 実際のnote記事文体学習済み"
+echo "  ・ 「マナミです。」開始 → すぐ本文"
+echo "  ・ ですます調・適切な段落分け"
+echo "  ・ 強調部分「」区切り・子ども表記統一"
+echo "  ・ 見出しなし"
+echo ""
+
+# ツールの実行
+if [ "$#" -eq 0 ]; then
+    python "$TOOL_PATH"
+else
+    python "$TOOL_PATH" "$1"
+fi

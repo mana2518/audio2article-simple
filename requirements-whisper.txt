@@ -1,0 +1,25 @@
+# Whisper + Claude Code システム用依存関係
+# APIコストゼロ・ローカル処理対応
+
+# 音声処理
+openai-whisper
+torch
+torchaudio
+
+# ファイル処理
+fastapi==0.115.14
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+python-dotenv==1.0.1
+
+# 日本語処理（文体学習用）
+mecab-python3==1.0.10
+unidic-lite==1.0.8
+
+# ユーティリティ
+markdown==3.7
+pyperclip==1.8.2
+
+# 注意: Gemini API関連は削除済み（APIコストゼロ化）
+# google-generativeai (削除)
+# google-cloud-speech (削除)

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# 大容量対応note記事生成ツール - シェルスクリプト
+# 1万文字でも確実に処理
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/note-generator-bulk.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install openai-whisper pyperclip"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+# ツールの実行
+python "$TOOL_PATH"

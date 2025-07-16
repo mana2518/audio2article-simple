@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# Whisper + Claude Code 音声記事化ツール
+# 使用方法: ./audio2article-whisper [音声ファイル]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/whisper_transcriber.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install -r requirements.txt"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+# ツールの実行
+if [ "$#" -eq 0 ]; then
+    echo "🎙️ Whisper + Claude Code 音声記事化ツール"
+    echo "============================================="
+    echo "使用方法:"
+    echo "  ./audio2article-whisper [音声ファイル]"
+    echo "  または音声ファイルをターミナルにドラッグ&ドロップ"
+    echo ""
+    python "$TOOL_PATH"
+else
+    python "$TOOL_PATH" "$1"
+fi

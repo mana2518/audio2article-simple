@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# 音声から記事化ツール - Whisper版（無料）
+# 使用方法: ./audio2article-simple [音声ファイル]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/whisper_transcriber.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install -r requirements-whisper.txt"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+# ツールの実行
+TOOL_PATH="$SCRIPT_DIR/integrated_audio_article.py"
+
+if [ "$#" -eq 0 ]; then
+    echo "🎙️ Audio to Article Generator v5.0 (統合版)"
+    echo "======================================================"
+    echo "✨ 音声から記事まで一括処理:"
+    echo "  ・ ドラッグ&ドロップ対応"
+    echo "  ・ Whisper base モデル（高速）"
+    echo "  ・ note記事風の高品質記事生成"
+    echo "  ・ 完成記事のクリップボード自動コピー"
+    echo ""
+    echo "使用方法:"
+    echo "  ./audio2article-simple [音声ファイル]"
+    echo "  または音声ファイルをターミナルにドラッグ&ドロップ"
+    echo ""
+    python "$TOOL_PATH"
+else
+    python "$TOOL_PATH" "$1"
+fi

@@ -1,0 +1,16 @@
+# Whisper + Claude Code システム用依存関係（簡易版）
+# APIコストゼロ・ローカル処理対応
+
+# 音声処理（簡易インストール）
+openai-whisper
+
+# ファイル処理
+python-dotenv==1.0.1
+
+# 日本語処理（文体学習用）
+mecab-python3==1.0.10
+unidic-lite==1.0.8
+
+# ユーティリティ
+pyperclip==1.8.2
+

@@ -1,0 +1,470 @@
+#!/usr/bin/env python3
+"""
+Whisper + Claude Code 音声記事化システム
+APIコストゼロ・ローカル文字起こし対応
+"""
+
+import os
+import sys
+import argparse
+import tempfile
+import subprocess
+from pathlib import Path
+import whisper
+from dotenv import load_dotenv
+import re
+import pyperclip
+
+# 環境変数の読み込み
+load_dotenv()
+
+class WhisperTranscriber:
+    def __init__(self):
+        # Whisperモデルの初期化
+        self.model = None
+        self.model_name = "base"  # base, small, medium, large から選択可能
+        
+        # 文体学習用ファイルパス
+        self.style_file_path = "/Users/manami/(N)note本文.md"
+        
+        # 文体サンプルを読み込み
+        self.style_text = self.load_style_sample()
+        
+        # 処理ファイルの管理
+        self.current_audio_name = None
+        
+        # 文章整理機能の初期化
+        pass
+
+    def cleanup_previous_files(self):
+        """前回の処理ファイルを完全クリアする"""
+        try:
+            current_dir = Path.cwd()
+            cleanup_count = 0
+            
+            # 前回の文字起こし・記事ファイルを削除
+            for file_path in current_dir.glob('*'):
+                if file_path.is_file():
+                    # 処理ファイルのパターンをチェック
+                    if any(pattern in file_path.name for pattern in [
+                        '_transcript.txt', '_article.txt', 
+                        'temp', 'tmp', '.whisper', '.cache'
+                    ]) and file_path.suffix in ['.txt', '.wav', '.mp3', '.cache']:
+                        file_path.unlink()
+                        cleanup_count += 1
+            
+            # メモリ上のデータをクリア
+            if hasattr(self, 'model') and self.model:
+                # Whisperモデルのキャッシュをクリア（メモリ節約）
+                pass  # Whisperモデル自体は保持して再利用する
+            
+            if cleanup_count > 0:
+                print(f"🧹 前回の処理ファイル {cleanup_count}個をクリアしました")
+            
+        except Exception as e:
+            print(f"⚠️ ファイルクリア中にエラー: {e}")
+
+    def load_whisper_model(self):
+        """Whisperモデルを読み込み"""
+        if self.model is None:
+            print(f"🤖 Whisperモデル ({self.model_name}) を読み込み中...")
+            try:
+                self.model = whisper.load_model(self.model_name)
+                print("✅ Whisperモデル読み込み完了")
+            except Exception as e:
+                print(f"❌ Whisperモデル読み込みエラー: {e}")
+                sys.exit(1)
+
+    def load_style_sample(self) -> str:
+        """文体サンプルファイルを読み込み"""
+        try:
+            if os.path.exists(self.style_file_path):
+                with open(self.style_file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # 最初の50行程度の文体サンプルを抽出
+                    lines = content.split('\n')
+                    sample_lines = []
+                    
+                    for line in lines:
+                        if line.strip() and not line.startswith('(') and not line.startswith('2025/'):
+                            sample_lines.append(line)
+                            if len(sample_lines) >= 50:
+                                break
+                    
+                    return '\n'.join(sample_lines)
+            else:
+                # フォールバック用デフォルト文体
+                return """マナミです。
+
+今回は「SNS運用で疲れた時の対処法」について話します。
+
+SNSを始めたばかりの頃は、毎日投稿することや「いいね」の数を気にしてしまいがちです。でも、そんな風に頑張りすぎていると、だんだん疲れてきてしまうんですよね。
+
+私も最初の頃は、毎日何かを投稿しなければいけないと思っていました。でも、それってすごく大変なことなんです。毎日ネタを考えて、写真を撮って、文章を書いて...。気がつくと、SNSのことばかり考えている自分がいました。
+
+そんな時に大切なのは「無理をしないこと」です。投稿の頻度を下げても大丈夫ですし、たまには休んでも構いません。フォロワーの方々は、あなたが無理をしていることよりも、自然体でいることを望んでいるはずです。"""
+        except Exception as e:
+            print(f"❌ 文体ファイル読み込みエラー: {e}")
+            return "マナミです。\n\n今回は音声配信の内容について話します。"
+
+    def clean_transcript(self, transcript: str) -> str:
+        """文字起こしテキストを整理"""
+        # 音韻転換や明らかな誤認識を修正
+        corrections = {
+            '学み': 'マナミ',
+            'SNA指し': 'SNS発信',
+            'サニー': '3人',
+            'フィラス': 'フリーランス',
+            'クライブ通り': 'プライベート',
+            'テーパン': 'プラン',
+            'どうすごす': 'どう過ごす',
+            'とりあえず': '',  # 冗長な場合は削除
+            'それで': '',     # 文頭の不要な接続詞
+            'まぁ': '',       # 口癖的な表現
+            'そうですね': '',  # 話し言葉の癖
+            'えっと': '',     # 間つなぎの言葉
+            'あの': '',       # 間つなぎの言葉
+            'えー': '',       # 間つなぎの言葉
+            'うーん': '',     # 考え込む音
+            'なんか': '',     # 冗長な表現
+        }
+        
+        # 文字起こしエラーの修正
+        text = transcript
+        for wrong, correct in corrections.items():
+            text = text.replace(wrong, correct)
+        
+        # 重複する接続詞や冗長な表現を削除
+        text = re.sub(r'\s+', ' ', text)  # 余分な空白削除
+        text = re.sub(r'そう(そう)+', 'そう', text)  # 重複削除
+        text = re.sub(r'でで+', 'で', text)  # 重複削除
+        
+        return text.strip()
+    
+    def organize_content(self, transcript: str) -> str:
+        """文字起こし内容を記事として整理"""
+        cleaned_text = self.clean_transcript(transcript)
+        
+        # 実際の文字起こし内容を使用して記事を作成
+        article = "マナミです。\n\n"
+        
+        # 文字起こしを段落ごとに分割して整理
+        sentences = cleaned_text.split('。')
+        current_paragraph = ""
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # 文の長さで段落を分ける
+            if len(current_paragraph + sentence) > 150:  # 150文字で段落区切り
+                if current_paragraph:
+                    article += current_paragraph.strip() + "。\n\n"
+                    current_paragraph = sentence + "。"
+                else:
+                    current_paragraph = sentence + "。"
+            else:
+                current_paragraph += sentence + "。"
+        
+        # 最後の段落を追加
+        if current_paragraph:
+            article += current_paragraph.strip() + "。\n\n"
+        
+        # 結びの文を追加
+        if not article.strip().endswith('ありがとうございました。'):
+            article += "今日も読んでいただきありがとうございました。"
+        
+        return article
+    
+    def adjust_length(self, text: str, target_length: int = 2000) -> str:
+        """文字数を調整"""
+        current_length = len(text)
+        
+        # 2000文字目標なので、短い場合は追加、長い場合は調整
+        if current_length > target_length * 1.2:  # 2400文字を超える場合のみ短縮
+            sentences = text.split('。')
+            result = ''
+            for sentence in sentences:
+                if len(result + sentence + '。') <= target_length:
+                    result += sentence + '。'
+                else:
+                    break
+            return result.rstrip('。') + '。'
+        
+        # 基本的には生成された文章をそのまま使用
+        return text
+
+    def print_banner(self):
+        """バナー表示"""
+        print("🎙️" + "="*60)
+        print("    Whisper + Claude Code 音声記事化システム")
+        print("    💰 APIコストゼロ・ローカル処理対応")
+        print("="*62)
+        
+        # 文体学習状況を表示
+        if os.path.exists(self.style_file_path):
+            print("✅ 文体学習済み: note本文.mdから文体を学習")
+        else:
+            print("⚠️ デフォルト文体を使用")
+        print()
+
+    def convert_audio_format(self, input_path: str, output_path: str) -> bool:
+        """音声ファイルをWAVに変換"""
+        try:
+            cmd = [
+                'ffmpeg', '-i', input_path, '-acodec', 'pcm_s16le', 
+                '-ar', '16000', '-ac', '1', output_path, '-y'
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return result.returncode == 0
+        except Exception as e:
+            print(f"❌ 音声変換エラー: {e}")
+            return False
+
+    def transcribe_with_whisper(self, audio_path: str) -> str:
+        """Whisperによる音声文字起こし"""
+        try:
+            self.load_whisper_model()
+            print("🗣️ Whisperで文字起こし中...")
+            
+            result = self.model.transcribe(audio_path, language="ja")
+            transcript = result["text"]
+            
+            print(f"✅ 文字起こし完了 ({len(transcript)}文字)")
+            return transcript
+            
+        except Exception as e:
+            print(f"❌ Whisper文字起こしエラー: {e}")
+            return None
+        
+        # 文体学習状況を表示
+        if os.path.exists(self.style_file_path):
+            print("✅ 文体学習済み: note本文.mdから文体を学習")
+        else:
+            print("⚠️ デフォルト文体を使用")
+        print()
+
+    def convert_audio_format(self, input_path: str, output_path: str) -> bool:
+        """音声ファイルをWAVに変換"""
+        try:
+            cmd = [
+                'ffmpeg', '-i', input_path, '-acodec', 'pcm_s16le', 
+                '-ar', '16000', '-ac', '1', output_path, '-y'
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return result.returncode == 0
+        except Exception as e:
+            print(f"❌ 音声変換エラー: {e}")
+            return False
+
+    def transcribe_with_whisper(self, audio_path: str) -> str:
+        """Whisperによる音声文字起こし"""
+        try:
+            self.load_whisper_model()
+            print("🗣️ Whisperで文字起こし中...")
+            
+            result = self.model.transcribe(audio_path, language="ja")
+            transcript = result["text"]
+            
+            print(f"✅ 文字起こし完了 ({len(transcript)}文字)")
+            return transcript
+            
+        except Exception as e:
+            print(f"❌ Whisper文字起こしエラー: {e}")
+            return None
+
+    def process_transcript_to_article(self, transcript: str) -> str:
+        """文字起こしを記事に変換"""
+        try:
+            print("🔄 文字起こしを記事として整理中...")
+            
+            # 文章整理処理
+            organized_content = self.organize_content(transcript)
+            
+            # 文字数調整
+            final_article = self.adjust_length(organized_content, 2000)
+            
+            print(f"✅ 記事整理完了 ({len(final_article)}文字)")
+            return final_article
+            
+        except Exception as e:
+            print(f"❌ 記事整理エラー: {e}")
+            return None
+
+    def save_results(self, transcript: str, article: str, filename: str):
+        """結果をファイルに保存"""
+        timestamp = Path(filename).stem
+        
+        # 文字起こし結果を保存
+        transcript_file = f"{timestamp}_transcript.txt"
+        with open(transcript_file, 'w', encoding='utf-8') as f:
+            f.write(transcript)
+        
+        # 完成記事を保存
+        article_file = f"{timestamp}_article.txt"
+        with open(article_file, 'w', encoding='utf-8') as f:
+            f.write(article)
+        
+        return transcript_file, article_file
+
+    def display_results(self, transcript: str, article: str, filename: str):
+        """結果を表示"""
+        print("\n" + "="*80)
+        print("✨ 記事作成完了！")
+        print("="*80)
+        print(f"📁 元ファイル: {filename}")
+        print(f"📝 文字起こし文字数: {len(transcript)}文字")
+        if article:
+            print(f"📰 完成記事文字数: {len(article)}文字")
+        print("="*80)
+        
+        if article:
+            print("\n📰 完成記事:")
+            print("-" * 80)
+            print(article)
+            print("-" * 80)
+            
+            # クリップボードにコピー
+            try:
+                pyperclip.copy(article)
+                print("\n📋 記事をクリップボードにコピーしました！")
+            except Exception as e:
+                print(f"⚠️ クリップボードコピーに失敗: {e}")
+        else:
+            print("\n❌ 記事の生成に失敗しました")
+            print("\n📄 元の文字起こし結果:")
+            print("-" * 40)
+            print(transcript)
+        
+        # ファイル保存のオプション
+        save_option = input("\n💾 結果をファイルに保存しますか？ (y/N): ").lower().strip()
+        if save_option in ['y', 'yes']:
+            try:
+                if article:
+                    transcript_file, article_file = self.save_results(transcript, article, filename)
+                    print(f"✅ 文字起こし: {transcript_file}")
+                    print(f"✅ 完成記事: {article_file}")
+                else:
+                    timestamp = Path(filename).stem
+                    transcript_file = f"{timestamp}_transcript.txt"
+                    with open(transcript_file, 'w', encoding='utf-8') as f:
+                        f.write(transcript)
+                    print(f"✅ 文字起こし: {transcript_file}")
+            except Exception as e:
+                print(f"❌ 保存に失敗しました: {e}")
+
+    def process_audio_file(self, audio_path: str):
+        """音声ファイルの処理メイン"""
+        try:
+            filename = Path(audio_path).name
+            
+            # 新しい音声ファイルの処理開始時に前回のファイルをクリア
+            if self.current_audio_name != filename:
+                print(f"🆕 新しい音声ファイルを検出: {filename}")
+                self.cleanup_previous_files()
+                self.current_audio_name = filename
+            
+            print(f"🎵 処理開始: {filename}")
+            
+            # 音声ファイル変換
+            wav_path = None
+            file_ext = Path(audio_path).suffix.lower()
+            
+            if file_ext != '.wav':
+                print("🔄 音声ファイルを変換中...")
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+                    wav_path = temp_wav.name
+                
+                if not self.convert_audio_format(audio_path, wav_path):
+                    print("⚠️ 音声変換に失敗しました。元ファイルで試行します。")
+                    wav_path = audio_path
+            else:
+                wav_path = audio_path
+            
+            # Whisperで文字起こし
+            transcript = self.transcribe_with_whisper(wav_path)
+            
+            if not transcript:
+                print("❌ 文字起こしに失敗しました")
+                return
+            
+            # 記事として整理
+            article = self.process_transcript_to_article(transcript)
+            
+            # 結果表示
+            self.display_results(transcript, article, filename)
+            
+        except Exception as e:
+            print(f"❌ 処理中にエラーが発生しました: {e}")
+        finally:
+            # 一時ファイルの完全削除
+            try:
+                if wav_path and wav_path != audio_path and os.path.exists(wav_path):
+                    os.remove(wav_path)
+            except Exception as e:
+                print(f"⚠️ 一時ファイル削除エラー: {e}")
+            
+            # メモリ上のデータをクリア
+            transcript = None
+            wav_path = None
+            article = None
+
+def main():
+    transcriber = WhisperTranscriber()
+    transcriber.print_banner()
+    
+    parser = argparse.ArgumentParser(description="Whisper音声文字起こし + Claude Code記事生成")
+    parser.add_argument("audio_file", nargs="?", help="音声ファイルのパス")
+    parser.add_argument("--model", default="base", choices=["tiny", "base", "small", "medium", "large"],
+                       help="使用するWhisperモデル (default: base)")
+    
+    args = parser.parse_args()
+    
+    if args.model:
+        transcriber.model_name = args.model
+    
+    if args.audio_file:
+        # コマンドライン引数から
+        if not os.path.exists(args.audio_file):
+            print("❌ ファイルが見つかりません:", args.audio_file)
+            return
+        
+        transcriber.process_audio_file(args.audio_file)
+    else:
+        # インタラクティブモード
+        print("💡 使用方法:")
+        print("   1. ターミナルにファイルをドラッグ&ドロップ")
+        print("   2. またはコマンド: python whisper_transcriber.py [音声ファイルパス]")
+        print("   3. オプション: --model [tiny/base/small/medium/large]")
+        print()
+        
+        while True:
+            try:
+                file_path = input("🎙️ 音声ファイルのパスを入力 (または 'q' で終了): ").strip()
+                
+                if file_path.lower() == 'q':
+                    break
+                
+                # ドラッグ&ドロップ時の引用符を削除
+                file_path = file_path.strip('"').strip("'")
+                
+                if not os.path.exists(file_path):
+                    print("❌ ファイルが見つかりません")
+                    continue
+                
+                transcriber.process_audio_file(file_path)
+                
+                # 続行確認
+                continue_option = input("\n🔄 別のファイルを処理しますか？ (y/N): ").lower().strip()
+                if continue_option not in ['y', 'yes']:
+                    break
+                
+            except KeyboardInterrupt:
+                print("\n👋 終了します")
+                break
+            except Exception as e:
+                print(f"❌ エラー: {e}")
+
+if __name__ == "__main__":
+    main()

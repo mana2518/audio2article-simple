@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# 高速音声文字起こし専用ツール - シェルスクリプト（baseモデル使用）
+# 使用方法: ./transcribe-fast [音声ファイル]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/transcribe-only.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install openai-whisper pyperclip"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+# 高速処理用（baseモデル）でツールの実行
+if [ "$#" -eq 0 ]; then
+    python "$TOOL_PATH" --model base
+else
+    python "$TOOL_PATH" --model base "$1"
+fi

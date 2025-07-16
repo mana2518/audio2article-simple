@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# 完璧note記事生成ツール - シェルスクリプト
+# 指定プロンプト・文体学習データ完全準拠
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/perfect-note-generator.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install openai-whisper pyperclip"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+echo "📝 完璧note記事生成ツール"
+echo "======================================================"
+echo "✅ 完全準拠:"
+echo "  ・ 指定プロンプト要件 100%対応"
+echo "  ・ 文体学習データ読み込み済み"
+echo "  ・ 2500文字構成 (導入200字+本文2000字+結論300字)"
+echo "  ・ 音声配信の主題を結論として紹介"
+echo "  ・ 「マナミです。」→すぐ本文"
+echo "  ・ ですます調・段落分け・強調「」・子ども表記"
+echo "  ・ 見出しなし"
+echo ""
+
+# ツールの実行
+python "$TOOL_PATH"

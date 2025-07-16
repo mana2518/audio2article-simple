@@ -1,0 +1,10 @@
+fastapi==0.115.14
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+google-generativeai==0.8.5
+python-dotenv==1.0.1
+google-cloud-speech==2.33.0
+mecab-python3==1.0.10
+unidic-lite==1.0.8
+markdown==3.7
+pyperclip==1.8.2
