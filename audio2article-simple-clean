@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# 音声から記事化ツール - 改良版（進行状況簡潔表示）
+# 使用方法: ./audio2article-simple-clean [音声ファイル]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/enhanced_audio_article.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install -r requirements-whisper.txt"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+if [ "$#" -eq 0 ]; then
+    echo "🎙️ 改良版音声記事生成ツール v2.0"
+    echo "====================================================="
+    echo "✨ 主な改良点:"
+    echo "  ・ 進行状況表示を簡潔に"
+    echo "  ・ 高精度文字起こし (medium モデル)"
+    echo "  ・ note風記事の自動生成"
+    echo "  ・ 改行問題を解決"
+    echo "  ・ クリップボード自動コピー"
+    echo ""
+    echo "使用方法:"
+    echo "  ./audio2article-simple-clean [音声ファイル]"
+    echo "  または音声ファイルをターミナルにドラッグ&ドロップ"
+    echo ""
+    # 進行状況の詳細表示を抑制
+    python "$TOOL_PATH" 2>/dev/null || python "$TOOL_PATH"
+else
+    echo "🎙️ 処理開始: $(basename "$1")"
+    echo "📊 進行状況は簡潔に表示されます"
+    echo ""
+    # 進行状況の詳細表示を抑制
+    python "$TOOL_PATH" "$1" 2>/dev/null || python "$TOOL_PATH" "$1"
+fi
+
+echo ""
+echo "✅ 処理完了！記事はクリップボードにコピーされました"
+echo "📝 noteエディタに貼り付けてお使いください"

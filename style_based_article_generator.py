@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-統合音声記事生成ツール
-音声ファイル → 文字起こし → note記事 一括処理
+ユーザー文体学習型記事生成ツール
+音声ファイル → 文字起こし → ユーザーの文体に基づいた記事生成
 """
 
 import os
@@ -12,14 +12,12 @@ import whisper
 import re
 from datetime import datetime
 import pyperclip
-import subprocess
 
-class IntegratedAudioArticleGenerator:
+class StyleBasedArticleGenerator:
     def __init__(self):
         self.model = None
         self.model_name = "base"  # 高速処理
-        self.target_length = 2500  # 約2500文字
-
+        
     def load_whisper_model(self):
         """Whisperモデルを読み込み"""
         if self.model is None:
@@ -81,74 +79,49 @@ class IntegratedAudioArticleGenerator:
         
         return text
 
-    def extract_main_topic(self, text):
-        """主要テーマを抽出"""
+    def extract_main_topic_and_content(self, text):
+        """主要テーマと重要内容を抽出"""
+        # 文を句読点で分割
+        sentences = re.split(r'[。！？]', text)
+        
+        # 重要なキーワードとテーマの対応
         topic_patterns = [
-            (r'値段をつける|価格設定|お金.*取る|有料.*サービス|メンバーシップ', '自分のサービスに値段をつけること'),
-            (r'働き方|フリーランス|仕事.*育児|ママフリーランス', 'ママフリーランスとしての働き方'),
-            (r'コミュニケーション|やり取り|相手.*立場|伝え方', 'コミュニケーションの重要性'),
-            (r'AI.*活用|AI.*相談|AIと.*壁打ち', 'AIの活用について'),
-            (r'SNS.*発信|コンテンツ.*作成|情報.*発信', '情報発信について'),
-            (r'子ども.*育て|家事.*育児|ワンオペ|保育園', '子育てと仕事の両立'),
+            (r'値段をつける|価格設定|お金.*取る|有料.*サービス|メンバーシップ|8000円|15000円', '自分のサービスに値段をつけること'),
+            (r'働き方|フリーランス|仕事.*育児|ママフリーランス|コミュニティ', 'ママフリーランスとしての働き方'),
+            (r'コミュニケーション|やり取り|相手.*立場|伝え方|コミュニケーションコスト', 'コミュニケーションの重要性'),
+            (r'AI.*活用|AI.*相談|AIと.*壁打ち|ChatGPT|Gemini', 'AIの活用について'),
+            (r'SNS.*発信|コンテンツ.*作成|情報.*発信|Instagram|YouTube|note', '情報発信について'),
+            (r'子ども.*育て|家事.*育児|ワンオペ|保育園|体調.*崩', '子育てと仕事の両立'),
             (r'生活|日常|ライフスタイル|時間.*使い方', '日々の生活について')
         ]
         
+        main_topic = '最近考えていること'
         for pattern, topic in topic_patterns:
             if re.search(pattern, text):
-                return topic
+                main_topic = topic
+                break
         
-        return '最近考えていること'
-
-    def extract_key_content(self, text):
-        """重要な内容を抽出"""
-        sentences = re.split(r'[。！？]', text)
-        concrete_content = []
-        
+        # 重要な内容を抽出
+        important_sentences = []
         for sentence in sentences:
             sentence = sentence.strip()
-            if len(sentence) < 20:
+            if len(sentence) < 15:
                 continue
-            
-            # 具体的な内容を示すキーワード
-            concrete_indicators = [
-                'メンバーシップ', '8月から', 'SNS運用サポート', '価格', '単価', '値段',
-                '8000円', '15000円', '1万5千', '無料', '有料', 'プラン',
-                'AI', '壁打ち', 'サービス', 'コンテンツ', '音声配信',
-                '実は', '具体的に', '例えば', 'つまり', 'そうなんです'
+                
+            # 重要な内容を示すキーワード
+            importance_indicators = [
+                '実は', '具体的に', '例えば', 'つまり', 'そうなんです', 'ということで',
+                'と思っている', 'を始めて', 'をやって', 'と感じて', 'を考えて',
+                'メンバーシップ', 'SNS運用', 'コンテンツ', 'AI', 'フリーランス',
+                '価格', '値段', 'サービス', '音声配信', 'ママフリーランス'
             ]
             
-            # 体験や考えを表す表現
-            experience_indicators = [
-                'と思っている', 'を始めて', 'をやって', 'ということで',
-                'と感じて', 'を考えて', 'が必要', 'をしようと'
-            ]
-            
-            has_concrete = any(indicator in sentence for indicator in concrete_indicators)
-            has_experience = any(indicator in sentence for indicator in experience_indicators)
-            
-            if has_concrete or has_experience:
+            if any(indicator in sentence for indicator in importance_indicators):
                 cleaned = self.remove_fillers(sentence)
-                if len(cleaned) > 15:
-                    concrete_content.append(cleaned + '。')
+                if len(cleaned) > 20:
+                    important_sentences.append(cleaned + '。')
         
-        # 3つのグループに分ける
-        if len(concrete_content) >= 3:
-            third = len(concrete_content) // 3
-            group1 = concrete_content[:third] if third > 0 else concrete_content[:1]
-            group2 = concrete_content[third:2*third] if third > 0 else concrete_content[1:2] if len(concrete_content) > 1 else []
-            group3 = concrete_content[2*third:] if third > 0 else concrete_content[2:] if len(concrete_content) > 2 else []
-            
-            content_blocks = []
-            if group1:
-                content_blocks.append('\n\n'.join(group1[:3]))
-            if group2:
-                content_blocks.append('\n\n'.join(group2[:3]))
-            if group3:
-                content_blocks.append('\n\n'.join(group3[:3]))
-            
-            return content_blocks
-        
-        return []
+        return main_topic, important_sentences
 
     def remove_fillers(self, text):
         """フィラー語除去"""
@@ -179,123 +152,94 @@ class IntegratedAudioArticleGenerator:
         
         return text
 
-    def create_introduction(self, main_topic):
-        """導入部を作成"""
-        if '値段' in main_topic or 'サービス' in main_topic:
-            importance = 'これまで無料で提供してきたサービスに価格をつけることの意味について、改めて考える機会がありました'
-        elif '働き方' in main_topic:
-            importance = '子育てと仕事を両立する中で感じることがたくさんありました'
-        elif 'コミュニケーション' in main_topic:
-            importance = '相手の立場を考えたやり取りの大切さを実感する出来事がありました'
-        elif 'AI' in main_topic:
-            importance = 'AIを日常的に活用する中で感じることがありました'
-        elif '発信' in main_topic:
-            importance = '情報発信のあり方について考え直すきっかけがありました'
-        elif '子育て' in main_topic:
-            importance = '3人の子どもを育てながら働く日々の中で、色々と思うことがありました'
-        else:
-            importance = '日々の生活の中で感じることがありました'
-        
-        conclusion_statement = f'{main_topic}について、{importance}。'
-        intro = f"マナミです。\n\n{conclusion_statement}\n\n今回は、そんな体験から考えたことを皆さんと共有したいと思います。"
-        
-        return intro
-
-    def create_main_content(self, key_content):
-        """主要内容を作成"""
-        if not key_content or all(not content.strip() for content in key_content):
-            return self.create_fallback_content()
-        
-        sections = []
-        
-        for i, content_block in enumerate(key_content):
-            if content_block and content_block.strip():
-                section = content_block.strip()
-                
-                if len(section) < 200:
-                    if i == 0:
-                        section += '\n\nこのことについて、改めて考える機会がありました。'
-                    elif i == 1:
-                        section += '\n\n実際にやってみると、思っていた以上に色々と考えることがありました。'
-                    else:
-                        section += '\n\nこうした経験を通して、新しい気づきもありました。'
-                
-                sections.append(section)
-        
-        if not sections:
-            return self.create_fallback_content()
-        
-        return '\n\n---------------\n\n'.join(sections)
-
-    def create_fallback_content(self):
-        """フォールバック用のメインコンテンツ"""
-        return """最近、日々の生活の中で考えることがありました。
-
-3人の子どもを育てながらママフリーランスとして働く中で、思うようにいかないことも多いですが、その分学ぶことも多いです。
-
----------------
-
-実際に体験してみると、想像していた以上に難しい部分もありました。
-
-でも、そうした経験を通して新しい気づきもたくさんありました。一つひとつ丁寧に取り組んでいくことの大切さを感じています。
-
----------------
-
-今回の経験から、改めて学ぶことがありました。
-
-完璧を求めすぎず、その時その時でできることをやっていく。そんな姿勢が大切なのかもしれないと思います。"""
-
-    def create_conclusion(self, main_topic):
-        """結論部を作成"""
-        if '値段' in main_topic or 'サービス' in main_topic:
-            specific_thought = 'お金を取ることは、より価値のあるサービスを提供するために必要なステップだと感じています。'
-        elif '働き方' in main_topic:
-            specific_thought = 'ママフリーランスという働き方には大変さもありますが、その分得られるものも大きいと思います。'
-        elif 'コミュニケーション' in main_topic:
-            specific_thought = '相手の立場を考えたコミュニケーションの大切さを、改めて実感しています。'
-        elif 'AI' in main_topic:
-            specific_thought = 'AIを上手に活用することで、働き方や生活の質を向上させていけると思います。'
-        elif '発信' in main_topic:
-            specific_thought = '情報発信を通じて、多くの方とつながり学び合えることに感謝しています。'
-        elif '子育て' in main_topic:
-            specific_thought = '子育てと仕事の両立は簡単ではありませんが、その中で得られる学びも多いです。'
-        else:
-            specific_thought = '日々の生活の中で感じたことを大切にしながら、前向きに取り組んでいきたいと思います。'
-        
-        conclusion = f"""今回お話しした内容は、私自身の体験や考えに基づくものですが、同じような状況にある方の参考になれば嬉しいです。
-
-{specific_thought}
-
-皆さんもぜひ、日常の中で感じたことや工夫していることがあれば、大切にしてみてください。そうした積み重ねが、より良い生活や働き方につながっていくのではないかと思います。"""
-        
-        return conclusion
-
-    def generate_article(self, transcript):
-        """記事生成メイン"""
-        print("🔧 文字起こしを記事に変換中...")
+    def generate_article_with_style(self, transcript):
+        """学習した文体に基づいて記事生成"""
+        print("📝 ユーザーの文体に基づいて記事を生成中...")
         
         # クリーニング
         clean_text = self.clean_transcript(transcript)
         print(f"📝 クリーニング完了: {len(clean_text)}文字")
         
-        # 主要テーマ抽出
-        main_topic = self.extract_main_topic(clean_text)
+        # 主要テーマと重要内容抽出
+        main_topic, important_sentences = self.extract_main_topic_and_content(clean_text)
         print(f"🎯 主要テーマ: {main_topic}")
+        print(f"📄 抽出された重要文: {len(important_sentences)}個")
         
-        # 重要内容抽出
-        key_content = self.extract_key_content(clean_text)
-        print(f"📄 抽出された重要文: {len(key_content)}個")
+        # マナミさんの文体に基づいた記事構成
+        article_parts = []
         
-        # 各セクション作成
-        introduction = self.create_introduction(main_topic)
-        main_content = self.create_main_content(key_content)
-        conclusion = self.create_conclusion(main_topic)
+        # 導入部 - マナミさんの典型的な書き出し
+        article_parts.append("マナミです。\n\n")
+        
+        # 状況説明と話題導入
+        if 'AI' in main_topic:
+            article_parts.append("AIの活用について、最近考えていることをお話しします。\n\n")
+        elif '働き方' in main_topic or 'フリーランス' in main_topic:
+            article_parts.append("ママフリーランスとしての働き方について、最近感じることがありました。\n\n")
+        elif 'コミュニケーション' in main_topic:
+            article_parts.append("コミュニケーションについて、改めて考える機会がありました。\n\n")
+        elif '発信' in main_topic:
+            article_parts.append("情報発信のあり方について、考え直すきっかけがありました。\n\n")
+        elif '子育て' in main_topic:
+            article_parts.append("3人の子どもを育てながら働く日々の中で、色々と思うことがありました。\n\n")
+        else:
+            article_parts.append("日々の生活の中で感じることがありました。\n\n")
+        
+        # メイン内容
+        if important_sentences:
+            # 文章を3つのブロックに分ける
+            mid_point = len(important_sentences) // 2
+            if len(important_sentences) >= 3:
+                block1 = important_sentences[:mid_point]
+                block2 = important_sentences[mid_point:]
+                
+                # 第1ブロック
+                article_parts.append('\n'.join(block1[:3]))
+                article_parts.append("\n\n---------------\n\n")
+                
+                # 第2ブロック
+                if block2:
+                    article_parts.append('\n'.join(block2[:3]))
+                    article_parts.append("\n\n")
+            else:
+                article_parts.append('\n'.join(important_sentences))
+                article_parts.append("\n\n")
+        else:
+            # フォールバック内容
+            if 'AI' in main_topic:
+                article_parts.append("AIを活用することで、働き方や生活の質を向上させていけると思います。\n\n実際に使ってみると、想像していた以上に色々なことができることがわかりました。\n\n")
+            else:
+                article_parts.append("実際にやってみると、思っていた以上に色々と考えることがありました。\n\n")
+        
+        # 結論部 - マナミさんの典型的な締めくくり
+        article_parts.append("---------------\n\n")
+        
+        if 'AI' in main_topic:
+            conclusion = """今回お話しした内容は、私自身の体験や考えに基づくものですが、同じような状況にある方の参考になれば嬉しいです。
+
+AIを上手に活用することで、働き方や生活の質を向上させていけると思います。
+
+皆さんもぜひ、日常の中で感じたことや工夫していることがあれば、大切にしてみてください。そうした積み重ねが、より良い生活や働き方につながっていくのではないかと思います。"""
+        elif 'フリーランス' in main_topic or '働き方' in main_topic:
+            conclusion = """今回お話しした内容は、私自身の体験や考えに基づくものですが、同じような状況にある方の参考になれば嬉しいです。
+
+ママフリーランスという働き方には大変さもありますが、その分得られるものも大きいと思います。
+
+皆さんもぜひ、日常の中で感じたことや工夫していることがあれば、大切にしてみてください。そうした積み重ねが、より良い生活や働き方につながっていくのではないかと思います。"""
+        else:
+            conclusion = """今回お話しした内容は、私自身の体験や考えに基づくものですが、同じような状況にある方の参考になれば嬉しいです。
+
+日々の生活の中で感じたことを大切にしながら、前向きに取り組んでいきたいと思います。
+
+皆さんもぜひ、日常の中で感じたことや工夫していることがあれば、大切にしてみてください。そうした積み重ねが、より良い生活や働き方につながっていくのではないかと思います。"""
+        
+        article_parts.append(conclusion)
         
         # 記事組み立て
-        article = f"{introduction}\n\n---------------\n\n{main_content}\n\n---------------\n\n{conclusion}"
+        article = "".join(article_parts)
         
         total_length = len(article)
-        print(f"📊 記事文字数: {total_length}文字（目標: {self.target_length}文字）")
+        print(f"📊 記事文字数: {total_length}文字")
         
         return article
 
@@ -307,11 +251,10 @@ class IntegratedAudioArticleGenerator:
         except Exception as e:
             print(f"⚠️ クリップボードコピー失敗: {e}")
 
-
     def save_article(self, article):
         """記事保存"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"article_integrated_{timestamp}.md"
+        filename = f"style_based_article_{timestamp}.md"
         filepath = Path("/Users/manami/audio_to_article_new") / filename
         
         try:
@@ -324,7 +267,7 @@ class IntegratedAudioArticleGenerator:
             return None
 
     def process_audio_file(self, audio_path):
-        """音声ファイルの統合処理"""
+        """音声ファイルの処理"""
         print(f"🔍 処理開始: {Path(audio_path).name}")
         
         # ファイル存在確認
@@ -345,7 +288,7 @@ class IntegratedAudioArticleGenerator:
         print("\n🎉 文字起こしが完了しました！")
         
         # 記事生成
-        article = self.generate_article(transcript)
+        article = self.generate_article_with_style(transcript)
         
         # 結果表示
         print("\n" + "=" * 80)
@@ -354,7 +297,7 @@ class IntegratedAudioArticleGenerator:
         print(article)
         print("=" * 80)
         
-        # 記事をクリップボードにコピー（文字起こし結果を上書き）
+        # クリップボードにコピー
         print("\n📋 記事をクリップボードにコピー中...")
         self.copy_to_clipboard(article)
         
@@ -372,7 +315,7 @@ class IntegratedAudioArticleGenerator:
         while True:
             print("🎯 音声ファイルをドラッグ&ドロップするか、パスを入力してください")
             print("   📁 対応形式: mp3, wav, m4a, aac, flac, ogg, wma, mp4, mov等")
-            print("   📋 ドラッグ&ドロップ: Finderから直接ファイルをドラッグしてください")
+            print("   📋 ユーザーの文体で記事を生成します")
             print("   🚪 終了: 'q' を入力")
             audio_input = input("\n🎙️ ファイル: ").strip()
             
@@ -423,16 +366,16 @@ class IntegratedAudioArticleGenerator:
         print("👋 お疲れさまでした！")
 
 def main():
-    parser = argparse.ArgumentParser(description='統合音声記事生成ツール')
+    parser = argparse.ArgumentParser(description='ユーザー文体学習型記事生成ツール')
     parser.add_argument('audio_file', nargs='?', help='音声ファイルのパス')
     
     args = parser.parse_args()
     
-    generator = IntegratedAudioArticleGenerator()
+    generator = StyleBasedArticleGenerator()
     
     print("🎙️" + "=" * 50)
-    print("   統合音声記事生成ツール v5.0")
-    print("   音声 → 文字起こし → note記事")
+    print("   ユーザー文体学習型記事生成ツール v1.0")
+    print("   音声 → 文字起こし → 文体ベース記事")
     print("=" * 52)
     print()
     

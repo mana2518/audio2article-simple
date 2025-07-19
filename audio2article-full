@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# 完全文字起こし保持型記事生成ツール
+# 使用方法: ./audio2article-full [音声ファイル]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/venv"
+TOOL_PATH="$SCRIPT_DIR/full_transcript_generator.py"
+
+# 仮想環境の確認
+if [ ! -d "$VENV_PATH" ]; then
+    echo "❌ 仮想環境が見つかりません。セットアップを実行してください:"
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install -r requirements-whisper.txt"
+    exit 1
+fi
+
+# 仮想環境のアクティベート
+source "$VENV_PATH/bin/activate"
+
+if [ "$#" -eq 0 ]; then
+    echo "🎙️ 完全文字起こし保持型記事生成ツール v1.0"
+    echo "====================================================="
+    echo "✨ 特徴:"
+    echo "  ・ 音声の内容をすべて文字起こし"
+    echo "  ・ 内容を削除せずに整理してnote風記事化"
+    echo "  ・ 完全文字起こしも別途保存"
+    echo "  ・ 進行状況表示を抑制"
+    echo "  ・ クリップボード自動コピー"
+    echo ""
+    echo "使用方法:"
+    echo "  ./audio2article-full [音声ファイル]"
+    echo "  または音声ファイルをターミナルにドラッグ&ドロップ"
+    echo ""
+    # 進行状況の詳細表示を抑制
+    python "$TOOL_PATH" 2>/dev/null
+else
+    echo "🎙️ 完全文字起こし処理開始: $(basename "$1")"
+    echo "📊 内容を削除せずに全文を保持します"
+    echo ""
+    # 進行状況の詳細表示を抑制
+    python "$TOOL_PATH" "$1" 2>/dev/null
+fi
+
+echo ""
+echo "✅ 処理完了！記事と完全文字起こしが保存されました"
+echo "📝 noteエディタに貼り付けてお使いください"

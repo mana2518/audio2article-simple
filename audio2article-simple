@@ -35,7 +35,10 @@ if [ "$#" -eq 0 ]; then
     echo "  ./audio2article-simple [音声ファイル]"
     echo "  または音声ファイルをターミナルにドラッグ&ドロップ"
     echo ""
-    python "$TOOL_PATH"
+    python "$TOOL_PATH" 2>/dev/null
 else
-    python "$TOOL_PATH" "$1"
+    echo "🎙️ 処理開始: $(basename "$1")"
+    echo "📊 進行状況の詳細表示を抑制しています..."
+    echo ""
+    python "$TOOL_PATH" "$1" 2>/dev/null
 fi

@@ -9,6 +9,9 @@ import sys
 import re
 from pathlib import Path
 import pyperclip
+import time
+from tqdm import tqdm
+import anthropic
 
 class NoteStyleGenerator:
     def __init__(self):
@@ -16,6 +19,30 @@ class NoteStyleGenerator:
         self.intro_length = 200    # 導入部約200文字
         self.main_length = 2000    # 主要内容約2000文字
         self.conclusion_length = 300  # 結論約300文字
+        
+        # Claude APIクライアント初期化
+        self.client = anthropic.Anthropic()
+        
+        # マナミさんの文体学習データ（実際のnote記事から抽出）
+        self.style_samples = self.load_style_samples()
+
+    def load_style_samples(self):
+        """マナミさんの文体学習データを読み込み"""
+        style_file = Path("/Users/manami/(N)note本文.md")
+        if style_file.exists():
+            try:
+                with open(style_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                return content[:10000]  # 最初の10000文字を使用
+            except Exception as e:
+                print(f"⚠️ スタイルファイル読み込みエラー: {e}")
+                return ""
+        return ""
+
+    def show_progress(self, description, duration=1):
+        """プログレスバー表示"""
+        for i in tqdm(range(100), desc=description, bar_format='{desc}: {percentage:3.0f}%|{bar}| {elapsed}<{remaining}'):
+            time.sleep(duration/100)
 
     def clean_transcript(self, text):
         """文字起こしのクリーニング（高精度版）"""
@@ -354,41 +381,118 @@ class NoteStyleGenerator:
         
         return conclusion
 
-    def generate_article(self, transcript):
-        """記事生成メイン"""
-        print("🔧 文字起こしを処理中...")
+    def generate_with_claude(self, transcript):
+        """Claude APIを使用してマナミさんの文体で記事生成"""
+        prompt = f"""
+以下は音声配信の文字起こしです。これをマナミさんの文体でnote記事として整理してください。
+
+# 文体の特徴（実際のnote記事から学習）:
+{self.style_samples[:3000]}
+
+# 記事の構成要件:
+- 冒頭は必ず「マナミです。」で始める
+- 導入部（約200文字）: 話題の背景と重要性を説明
+- 主要内容（約2000文字）: 具体的な体験談と学びを3つのセクションに分け、「---------------」で区切る
+- 結論部（約300文字）: 読者へのメッセージと今後の展望
+- 「です/ます」調で統一
+- 「子ども」表記を使用
+- 「」で強調したい部分を囲む
+- 会話調で親しみやすく、でも専門的すぎない
+- 具体的な体験談を交える
+- 読者に共感してもらえる内容
+
+# 文字起こし:
+{transcript}
+
+上記の文字起こしを、マナミさんの文体学習データの特徴を活かして、読みやすく構造化されたnote記事として再構成してください。
+"""
         
-        # クリーニング
+        try:
+            response = self.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4000,
+                temperature=0.3,
+                messages=[{
+                    "role": "user", 
+                    "content": prompt
+                }]
+            )
+            return response.content[0].text
+        except Exception as e:
+            print(f"⚠️ Claude API エラー: {e}")
+            return self.generate_fallback_article(transcript)
+
+    def generate_fallback_article(self, transcript):
+        """フォールバック記事生成（API失敗時）"""
         clean_text = self.clean_transcript(transcript)
-        print(f"📝 クリーニング完了: {len(clean_text)}文字")
-        
-        # 主要テーマ抽出
         main_topic = self.extract_main_topic(clean_text)
-        print(f"🎯 主要テーマ: {main_topic}")
-        
-        # 重要内容抽出
         key_content = self.extract_key_content(clean_text)
-        print(f"📄 抽出された重要文: {len(key_content)}個")
         
-        # 各セクション作成
         introduction = self.create_introduction(main_topic, key_content)
         main_content = self.create_main_content(key_content, self.main_length)
         conclusion = self.create_conclusion(main_topic)
         
-        # 記事組み立て
-        article = f"{introduction}\n\n---------------\n\n{main_content}\n\n---------------\n\n{conclusion}"
+        return f"{introduction}\n\n---------------\n\n{main_content}\n\n---------------\n\n{conclusion}"
+
+    def generate_article(self, transcript):
+        """記事生成メイン"""
+        print("\n🎯 記事生成を開始します...")
+        
+        # Step 1: 文字起こし処理
+        self.show_progress("📝 文字起こしをクリーニング中", 1)
+        clean_text = self.clean_transcript(transcript)
+        print(f"✅ クリーニング完了: {len(clean_text)}文字")
+        
+        # Step 2: 文体学習データ確認
+        self.show_progress("📚 文体学習データを読み込み中", 0.5)
+        if self.style_samples:
+            print("✅ マナミさんの文体データを使用")
+        else:
+            print("⚠️ 文体データが見つかりません - フォールバックモードで実行")
+        
+        # Step 3: Claude APIで記事生成
+        self.show_progress("🤖 AI記事生成中", 3)
+        article = self.generate_with_claude(clean_text)
+        
+        # Step 4: 後処理
+        self.show_progress("✨ 最終調整中", 0.5)
         
         # 文字数確認
         total_length = len(article)
-        print(f"📊 記事文字数: {total_length}文字（目標: {self.target_length}文字）")
+        print(f"\n📊 生成完了: {total_length}文字")
         
         return article
 
+    def format_as_markdown(self, text):
+        """マークダウン形式でフォーマット"""
+        # 既にマークダウン形式の場合はそのまま返す
+        if "```" in text or text.startswith("#"):
+            return text
+            
+        # プレーンテキストをマークダウンに変換
+        lines = text.split('\n')
+        formatted_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                formatted_lines.append('')
+                continue
+                
+            # 区切り線の処理
+            if line == '---------------':
+                formatted_lines.append('\n---\n')
+            else:
+                formatted_lines.append(line)
+        
+        return '\n'.join(formatted_lines)
+
     def copy_to_clipboard(self, text):
-        """クリップボードにコピー"""
+        """マークダウン形式でクリップボードにコピー"""
         try:
-            pyperclip.copy(text)
-            print("📋 記事をクリップボードにコピーしました！")
+            markdown_text = self.format_as_markdown(text)
+            pyperclip.copy(markdown_text)
+            print("📋 記事をマークダウン形式でクリップボードにコピーしました！")
         except Exception as e:
             print(f"⚠️ クリップボードコピー失敗: {e}")
 
@@ -400,9 +504,10 @@ class NoteStyleGenerator:
         filepath = Path("/Users/manami/audio_to_article_new") / filename
         
         try:
+            markdown_text = self.format_as_markdown(article)
             with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(article)
-            print(f"💾 記事保存完了: {filename}")
+                f.write(markdown_text)
+            print(f"💾 記事をマークダウン形式で保存完了: {filename}")
             return str(filepath)
         except Exception as e:
             print(f"❌ 保存エラー: {e}")
@@ -491,7 +596,7 @@ def main():
     
     # 記事生成
     print("\n" + "=" * 60)
-    print("🤖 note記事風記事を生成中...")
+    print("🤖 マナミさんの文体でnote記事を生成中...")
     print("=" * 60)
     
     generator = NoteStyleGenerator()
@@ -504,7 +609,7 @@ def main():
     print(article)
     print("=" * 80)
     
-    # クリップボードにコピー
+    # マークダウン形式でクリップボードにコピー
     generator.copy_to_clipboard(article)
     
     # 保存
@@ -513,7 +618,7 @@ def main():
     print(f"\n✅ 処理完了")
     if saved_path:
         print(f"💾 保存場所: {saved_path}")
-    print("📋 記事はクリップボードにコピー済みです")
+    print("📋 記事はマークダウン形式でクリップボードにコピー済みです")
 
 if __name__ == "__main__":
     main()
